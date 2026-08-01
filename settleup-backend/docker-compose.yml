@@ -1,0 +1,72 @@
+version: "3.9"
+
+# ──────────────────────────────────────────────────────────────
+#  SettleUp — Local Development Infrastructure
+#  Services: PostgreSQL 16, Redis 7, RabbitMQ 3.13
+#
+#  Usage:
+#    docker-compose up -d
+#    docker-compose down          (stop, keep volumes)
+#    docker-compose down -v       (stop, destroy volumes / wipe DB)
+# ──────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL 16 ────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: settleup-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: settleup
+      POSTGRES_USER: settleup
+      POSTGRES_PASSWORD: settleup_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U settleup -d settleup"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis 7 ──────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: settleup-redis
+    restart: unless-stopped
+    command: redis-server --requirepass redis_secret
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_secret", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── RabbitMQ 3.13 (with management UI) ───────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: settleup-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: settleup
+      RABBITMQ_DEFAULT_PASS: rabbitmq_secret
+    ports:
+      - "5672:5672"     # AMQP protocol port
+      - "15672:15672"   # Management UI  →  http://localhost:15672
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:

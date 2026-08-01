@@ -1,0 +1,121 @@
+spring:
+  application:
+    name: settleup-backend
+
+  # ── DataSource (PostgreSQL 16) ────────────────────────────────
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:settleup}
+    username: ${DB_USER:settleup}
+    password: ${DB_PASSWORD:settleup_secret}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: SettleUpHikariPool
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # ── JPA / Hibernate ──────────────────────────────────────────
+  jpa:
+    hibernate:
+      ddl-auto: validate          # Flyway owns schema — Hibernate must NOT create/alter
+    show-sql: false
+    open-in-view: false           # Prevent lazy-loading anti-pattern in web layer
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          time_zone: UTC          # All timestamps stored as UTC
+        order_inserts: true
+        order_updates: true
+        batch_size: 30
+
+  # ── Flyway ───────────────────────────────────────────────────
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    validate-on-migrate: true
+    out-of-order: false
+
+  # ── Redis 7 ──────────────────────────────────────────────────
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redis_secret}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 10
+          max-idle: 5
+          min-idle: 1
+          max-wait: 1000ms
+
+  # ── RabbitMQ 3.13 ────────────────────────────────────────────
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:settleup}
+    password: ${RABBITMQ_PASSWORD:rabbitmq_secret}
+    virtual-host: /
+    listener:
+      simple:
+        acknowledge-mode: manual       # Manual ack for reliable processing
+        prefetch: 1                    # Process one message at a time per consumer
+        retry:
+          enabled: true
+          initial-interval: 1000ms
+          max-attempts: 3
+          multiplier: 2.0
+
+# ── JWT Settings ─────────────────────────────────────────────
+app:
+  jwt:
+    secret: ${JWT_SECRET}              # REQUIRED env var — never hard-code
+    access-token-expiry-ms: 86400000   # 24 hours (increased from 15 min for seamless dev/testing)
+    refresh-token-expiry-ms: 604800000 # 7 days
+
+  # ── RabbitMQ Queue Names ──────────────────────────────────────
+  rabbitmq:
+    queues:
+      settlement-process: settlement.process.queue
+      notification-dispatch: notification.dispatch.queue
+      budget-alert: budget.alert.queue
+    exchanges:
+      settleup: settleup.exchange
+    routing-keys:
+      settlement: settlement.process
+      notification: notification.dispatch
+      budget: budget.alert
+
+# ── Server ───────────────────────────────────────────────────
+server:
+  port: 8080
+  servlet:
+    context-path: /
+  error:
+    whitelabel:
+      enabled: false      # We provide our own GlobalExceptionHandler
+
+# ── Actuator ─────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# ── Logging ──────────────────────────────────────────────────
+logging:
+  level:
+    com.settleup: DEBUG
+    org.springframework.security: INFO
+    org.springframework.amqp: INFO
+    org.flywaydb: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"

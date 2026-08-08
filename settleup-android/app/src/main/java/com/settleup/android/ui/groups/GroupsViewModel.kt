@@ -112,7 +112,8 @@ class GroupsViewModel @Inject constructor(
                 paidBy = req.paidBy,
                 splitType = req.splitType,
                 splits = req.splits,
-                currency = _groupDetail.value?.currency ?: "INR"
+                currency = _groupDetail.value?.currency ?: "INR",
+                expenseDate = req.expenseDate
             )
             // Also refresh balances from remote if online
             groupRepository.refreshBalances(groupId)

@@ -21,8 +21,33 @@ import java.util.*
 
 @Composable
 fun TotalTab(expenses: List<ExpenseEntity>, currency: String, currentUserId: String?) {
-    val activeExpenses = expenses.filter { !it.isReversal && !it.description.startsWith("SETTLEMENT:") }
-    
+    val reversedIndices = mutableSetOf<Int>()
+    val items = expenses.toList()
+    for (i in items.indices) {
+        val r = items[i]
+        if (r.isReversal || r.description.startsWith("REVERSAL:")) {
+            val origDesc = r.description.replace(Regex("^REVERSAL:\\s*(REVERSAL:\\s*)*"), "")
+            for (j in i + 1 until items.size) {
+                val candidate = items[j]
+                if (!reversedIndices.contains(j) &&
+                    !candidate.isReversal &&
+                    !candidate.description.startsWith("REVERSAL:") &&
+                    (candidate.description == origDesc || candidate.description.contains(origDesc)) &&
+                    candidate.totalAmount == r.totalAmount
+                ) {
+                    reversedIndices.add(j)
+                    break
+                }
+            }
+        }
+    }
+
+    val activeExpenses = items.filterIndexed { idx, exp ->
+        if (exp.isReversal || exp.description.startsWith("REVERSAL:")) false
+        else if (reversedIndices.contains(idx)) false
+        else if (exp.description.startsWith("SETTLEMENT:")) false
+        else true
+    }
     // Group by month "yyyy-MM"
     val expensesByMonth = activeExpenses.groupBy { 
         Instant.ofEpochMilli(it.createdAt).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy-MM"))

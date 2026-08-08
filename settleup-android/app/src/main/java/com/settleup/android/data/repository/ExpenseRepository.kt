@@ -35,10 +35,18 @@ class ExpenseRepository @Inject constructor(
         paidBy: String,
         splitType: String,
         splits: List<SplitEntry>? = null,
-        currency: String = "INR"
+        currency: String = "INR",
+        expenseDate: String? = null
     ) {
         val splitsJson = splits?.joinToString(",", "[", "]") {
             """{"userId":"${it.userId}","value":"${it.value}"}"""
+        }
+        val createdAt = if (expenseDate != null) {
+            runCatching {
+                java.time.LocalDate.parse(expenseDate).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            }.getOrDefault(System.currentTimeMillis())
+        } else {
+            System.currentTimeMillis()
         }
         val entity = ExpenseEntity(
             groupId = groupId,
@@ -48,7 +56,8 @@ class ExpenseRepository @Inject constructor(
             splitType = splitType,
             splitsJson = splitsJson,
             currency = currency,
-            syncStatus = SyncStatus.PENDING
+            syncStatus = SyncStatus.PENDING,
+            createdAt = createdAt
         )
         expenseDao.insert(entity)
         enqueueSyncWorker()
@@ -90,12 +99,16 @@ class ExpenseRepository @Inject constructor(
         for (entity in pending) {
             runCatching {
                 val splits = entity.splitsJson?.let { parseSimpleSplits(it) }
+                val expenseDateStr = java.time.Instant.ofEpochMilli(entity.createdAt)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
                 val req = CreateExpenseRequest(
                     description = entity.description,
                     totalAmount = entity.totalAmount,
                     paidBy = entity.paidBy,
                     splitType = entity.splitType,
-                    splits = splits
+                    splits = splits,
+                    expenseDate = expenseDateStr
                 )
                 val dto = api.createExpense(entity.groupId, req)
                 expenseDao.markSynced(entity.localId, dto.transactionId)

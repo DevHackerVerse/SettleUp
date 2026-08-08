@@ -17,6 +17,17 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.settleup.android.data.local.entity.BalanceEntity
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import org.json.JSONArray
+import androidx.compose.material.icons.outlined.Receipt
+import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.settleup.android.data.local.entity.ExpenseEntity
 import com.settleup.android.data.local.entity.SyncStatus
 import com.settleup.android.data.remote.MemberDto
@@ -176,6 +187,7 @@ fun GroupDetailScreen(
 
 // ── Tab 1: Expenses (with ⏳ sync badge) ─────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpensesTab(
     expenses: List<ExpenseEntity>,
@@ -183,6 +195,9 @@ fun ExpensesTab(
     groupId: String,
     onEdit: (ExpenseEntity) -> Unit
 ) {
+    val currentUserId = viewModel.currentUserId.collectAsState().value
+    val groupDetail = viewModel.groupDetail.collectAsState().value
+    
     val reversedIndices = mutableSetOf<Int>()
     val items = expenses.toList()
     for (i in items.indices) {
@@ -207,7 +222,6 @@ fun ExpensesTab(
     val activeExpenses = items.filterIndexed { idx, exp ->
         if (exp.isReversal || exp.description.startsWith("REVERSAL:")) false
         else if (reversedIndices.contains(idx)) false
-        else if (exp.description.startsWith("SETTLEMENT:")) false
         else true
     }
     
@@ -222,52 +236,181 @@ fun ExpensesTab(
             }
         }
     } else {
+        val expensesByMonth = activeExpenses.groupBy { 
+            Instant.ofEpochMilli(it.createdAt).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("MMMM yyyy"))
+        }
+
         LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
-            items(activeExpenses, key = { it.localId }) { expense ->
-                ListItem(
-                    headlineContent = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(expense.description, fontWeight = FontWeight.SemiBold)
-                            when (expense.syncStatus) {
-                                SyncStatus.PENDING -> SuggestionChip(onClick = {}, label = { Text("⏳ Pending", style = MaterialTheme.typography.labelSmall) })
-                                SyncStatus.FAILED -> SuggestionChip(
-                                    onClick = {},
-                                    colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                                    label = { Text("❌ Sync failed", style = MaterialTheme.typography.labelSmall) }
-                                )
-                                else -> Unit
+            expensesByMonth.forEach { (monthStr, monthExpenses) ->
+                item {
+                    Text(
+                        text = monthStr,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
+                }
+                
+                items(monthExpenses, key = { it.localId }) { expense ->
+                    var actionTriggered by remember { mutableStateOf(false) }
+                    val dismissState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = {
+                            if (it == SwipeToDismissBoxValue.Settled) {
+                                actionTriggered = false
+                                return@rememberSwipeToDismissBoxState true
                             }
-                        }
-                    },
-                    supportingContent = { Text("${expense.splitType} • ${expense.currency}") },
-                    trailingContent = {
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                "${expense.currency} ${expense.totalAmount}",
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            if (expense.remoteId != null) {
-                                Row {
-                                    TextButton(onClick = { onEdit(expense) }, contentPadding = PaddingValues(0.dp)) {
-                                        Text("Edit", style = MaterialTheme.typography.labelSmall)
-                                    }
-                                    Spacer(Modifier.width(8.dp))
-                                    TextButton(
-                                        onClick = {
-                                            viewModel.reverseExpense(expense.remoteId)
-                                            viewModel.loadBalances(groupId)
-                                        },
-                                        contentPadding = PaddingValues(0.dp)
-                                    ) {
-                                        Text("Reverse", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                            if (it == SwipeToDismissBoxValue.StartToEnd) {
+                                if (!actionTriggered) {
+                                    actionTriggered = true
+                                    onEdit(expense)
+                                }
+                                return@rememberSwipeToDismissBoxState false
+                            } else if (it == SwipeToDismissBoxValue.EndToStart) {
+                                if (!actionTriggered) {
+                                    actionTriggered = true
+                                    if (expense.remoteId != null) {
+                                        viewModel.reverseExpense(expense.remoteId)
+                                        viewModel.loadBalances(groupId)
                                     }
                                 }
+                                return@rememberSwipeToDismissBoxState false
                             }
+                            false
                         }
-                    }
-                )
-                HorizontalDivider()
+                    )
+                    
+                    SwipeToDismissBox(
+                        state = dismissState,
+                        backgroundContent = {
+                            val color = when (dismissState.dismissDirection) {
+                                SwipeToDismissBoxValue.StartToEnd -> Color(0xFF3b82f6)
+                                SwipeToDismissBoxValue.EndToStart -> Color(0xFFef4444)
+                                else -> Color.Transparent
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(color)
+                                    .padding(horizontal = 24.dp),
+                                contentAlignment = if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
+                            ) {
+                                if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.White)
+                                } else if (dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Reverse", tint = Color.White)
+                                }
+                            }
+                        },
+                        content = {
+                            ExpenseRow(expense, currentUserId, groupDetail?.members)
+                        }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ExpenseRow(expense: ExpenseEntity, currentUserId: String?, members: List<com.settleup.android.data.remote.MemberDto>?) {
+    val date = Instant.ofEpochMilli(expense.createdAt).atZone(ZoneId.systemDefault())
+    val monthShort = date.format(DateTimeFormatter.ofPattern("MMM"))
+    val day = date.format(DateTimeFormatter.ofPattern("dd"))
+    
+    val isSettlement = expense.description.startsWith("SETTLEMENT:")
+    
+    var amountPaid = 0.0
+    var amountOwed = 0.0
+    
+    if (currentUserId != null && !expense.ledgerEntriesJson.isNullOrBlank()) {
+        runCatching {
+            val array = JSONArray(expense.ledgerEntriesJson)
+            for (i in 0 until array.length()) {
+                val entry = array.getJSONObject(i)
+                if (entry.getString("userId") == currentUserId) {
+                    val amt = entry.getString("amount").toDoubleOrNull() ?: 0.0
+                    if (entry.getString("entryType") == "CREDIT") amountPaid += amt
+                    if (entry.getString("entryType") == "DEBIT") amountOwed += amt
+                }
+            }
+        }
+    }
+    
+    val net = amountPaid - amountOwed
+    
+    var payerName = expense.paidBy
+    if (members != null) {
+        val member = members.find { it.userId == expense.paidBy }
+        if (member != null) payerName = member.name.split(" ").first()
+    }
+    
+    val paidText = if (expense.paidBy == currentUserId) {
+        "You paid ${expense.currency}${"%.2f".format(expense.totalAmount.toDoubleOrNull() ?: 0.0)}"
+    } else {
+        "$payerName paid ${expense.currency}${"%.2f".format(expense.totalAmount.toDoubleOrNull() ?: 0.0)}"
+    }
+    
+    val desc = if (isSettlement) expense.description.replace("SETTLEMENT: ", "") else expense.description
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.width(36.dp)
+        ) {
+            Text(monthShort, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(day, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+        
+        Spacer(Modifier.width(12.dp))
+        
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(
+                    color = if (isSettlement) Color(0xFF059669).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(12.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isSettlement) {
+                Icon(Icons.Outlined.Payments, contentDescription = null, tint = Color(0xFF059669))
+            } else {
+                Icon(Icons.Outlined.Receipt, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        
+        Spacer(Modifier.width(16.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(desc, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                if (expense.syncStatus == SyncStatus.PENDING) {
+                    Spacer(Modifier.width(6.dp))
+                    Text("⏳", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            Text(if (isSettlement) "Settlement" else paidText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        
+        Column(horizontalAlignment = Alignment.End) {
+            if (net > 0.001) {
+                Text("you lent", style = MaterialTheme.typography.labelSmall, color = Color(0xFF059669))
+                Text("${expense.currency}${"%.2f".format(net)}", 
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color(0xFF059669))
+            } else if (net < -0.001) {
+                Text("you borrowed", style = MaterialTheme.typography.labelSmall, color = Color(0xFFea580c))
+                Text("${expense.currency}${"%.2f".format(-net)}", 
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color(0xFFea580c))
+            } else if (amountPaid > 0.001) {
+                Text("not involved", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

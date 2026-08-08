@@ -24,7 +24,7 @@ data class BalanceResponse(val balances: List<BalanceEntry>)
 data class SettlementSuggestion(val fromUserId: String, val toUserId: String, @Json(name = "from") val fromName: String, @Json(name = "to") val toName: String, val amount: String)
 data class SimplifiedDebtsResponse(val settlementsSuggested: List<SettlementSuggestion>)
 data class SplitEntry(val userId: String, val value: String)
-data class CreateExpenseRequest(val description: String, val totalAmount: String, val paidBy: String, val splitType: String, val splits: List<SplitEntry>? = null)
+data class CreateExpenseRequest(val description: String, val totalAmount: String, val paidBy: String, val splitType: String, val splits: List<SplitEntry>? = null, val expenseDate: String? = null)
 data class ExpenseDto(
     val transactionId: String,
     val groupId: String,

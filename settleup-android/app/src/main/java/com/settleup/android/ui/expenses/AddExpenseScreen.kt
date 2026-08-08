@@ -17,6 +17,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.settleup.android.data.remote.CreateExpenseRequest
 import com.settleup.android.data.remote.SplitEntry
 import com.settleup.android.ui.groups.GroupsViewModel
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.foundation.clickable
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,6 +39,11 @@ fun AddExpenseScreen(
     var splitValues by remember { mutableStateOf(mapOf<String, String>()) }
     var payerExpanded by remember { mutableStateOf(false) }
     var submitted by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis())
+    val selectedDateStr = datePickerState.selectedDateMillis?.let {
+        java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.of("UTC")).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+    }
 
     LaunchedEffect(members) {
         viewModel.loadGroup(groupId)
@@ -80,6 +89,23 @@ fun AddExpenseScreen(
                     label = { Text("Total Amount (${group?.currency ?: "INR"})") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                Box(modifier = Modifier.fillMaxWidth().clickable { showDatePicker = true }) {
+                    OutlinedTextField(
+                        value = selectedDateStr ?: "",
+                        onValueChange = {},
+                        label = { Text("Date") },
+                        readOnly = true,
+                        enabled = false,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                            disabledBorderColor = MaterialTheme.colorScheme.outline,
+                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
             }
             item {
                 ExposedDropdownMenuBox(expanded = payerExpanded, onExpandedChange = { payerExpanded = it }) {
@@ -180,7 +206,7 @@ fun AddExpenseScreen(
                             }
                             // Uses repository: saves locally as PENDING, enqueues SyncWorker
                             viewModel.addExpense(groupId, CreateExpenseRequest(
-                                description, totalAmount, paidBy, actualSplitType, splits))
+                                description, totalAmount, paidBy, actualSplitType, splits, selectedDateStr))
                             onBack()
                         },
                         enabled = isValid,
@@ -196,6 +222,19 @@ fun AddExpenseScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+            }
+        }
+        if (showDatePicker) {
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(onClick = { showDatePicker = false }) { Text("OK") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                }
+            ) {
+                DatePicker(state = datePickerState)
             }
         }
     }

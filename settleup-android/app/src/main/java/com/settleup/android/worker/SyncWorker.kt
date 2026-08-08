@@ -51,7 +51,7 @@ class SyncWorker @AssistedInject constructor(
             }
 
             // Pull all groups from DB directly for sync
-            val allGroups = getAllGroupIds()
+            val allGroups = groupDao.getAllIds()
             for (groupId in allGroups) {
                 expenseRepository.refreshFromRemote(groupId)
                 groupRepository.refreshBalances(groupId)
@@ -62,24 +62,6 @@ class SyncWorker @AssistedInject constructor(
             it.printStackTrace()
             // Retry on failure — WorkManager will honour exponential backoff
             if (runAttemptCount < 3) Result.retry() else Result.failure()
-        }
-    }
-
-    private suspend fun getAllGroupIds(): List<String> {
-        // Read directly via a one-shot suspend DAO query
-        return try {
-            // We use a workaround: collect the first emission from the Flow
-            var ids = emptyList<String>()
-            kotlinx.coroutines.withTimeoutOrNull(2000) {
-                groupDao.observeAll().collect { entities ->
-                    ids = entities.map { it.groupId }
-                    // Cancel after first emission
-                    throw kotlinx.coroutines.CancellationException("got first value")
-                }
-            }
-            ids
-        } catch (e: Exception) {
-            emptyList()
         }
     }
 }

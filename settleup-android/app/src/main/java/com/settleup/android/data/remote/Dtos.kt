@@ -12,8 +12,8 @@ data class GroupDto(
     val groupId: String,
     val name: String,
     val description: String?,
-    val currency: String,
-    val createdBy: String,
+    @Json(name = "defaultCurrency") val currency: String,
+    @Json(name = "createdByUserId") val createdBy: String,
     val members: List<MemberDto> = emptyList()
 )
 data class MemberDto(val userId: String, val name: String, val email: String, val role: String)
@@ -21,20 +21,27 @@ data class CreateGroupRequest(val name: String, val description: String? = null,
 data class AddMemberRequest(val email: String)
 data class BalanceEntry(@Json(name = "userId") val userId: String, val name: String, val netBalance: String)
 data class BalanceResponse(val balances: List<BalanceEntry>)
-data class SettlementSuggestion(val fromUserId: String, val toUserId: String, val fromName: String, val toName: String, val amount: String)
+data class SettlementSuggestion(val fromUserId: String, val toUserId: String, @Json(name = "from") val fromName: String, @Json(name = "to") val toName: String, val amount: String)
 data class SimplifiedDebtsResponse(val settlementsSuggested: List<SettlementSuggestion>)
 data class SplitEntry(val userId: String, val value: String)
 data class CreateExpenseRequest(val description: String, val totalAmount: String, val paidBy: String, val splitType: String, val splits: List<SplitEntry>? = null)
 data class ExpenseDto(
     val transactionId: String,
     val groupId: String,
-    val paidBy: String,
+    @Json(name = "paidByUserId") val paidBy: String,
     val description: String,
     val totalAmount: String,
     val currency: String,
     val splitType: String,
-    val isReversal: Boolean = false,
-    val createdAt: String? = null
+    @Json(name = "reversal") val isReversal: Boolean = false,
+    val createdAt: String? = null,
+    val ledgerEntries: List<LedgerEntryDto>? = null
+)
+data class LedgerEntryDto(
+    val id: Long?,
+    val userId: String,
+    val entryType: String,
+    val amount: String
 )
 data class PageResponse<T>(val content: List<T>, val totalElements: Long, val totalPages: Int, val number: Int)
 data class SettlementRequest(val payeeId: String, val amount: String, val idempotencyKey: String)

@@ -9,6 +9,9 @@ interface GroupDao {
     @Query("SELECT * FROM groups ORDER BY name ASC")
     fun observeAll(): Flow<List<GroupEntity>>
 
+    @Query("SELECT groupId FROM groups")
+    suspend fun getAllIds(): List<String>
+
     @Query("SELECT * FROM groups WHERE groupId = :groupId LIMIT 1")
     suspend fun getById(groupId: String): GroupEntity?
 

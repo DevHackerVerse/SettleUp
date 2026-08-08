@@ -21,7 +21,8 @@ import javax.inject.Inject
 class GroupsViewModel @Inject constructor(
     private val api: ApiService,
     private val groupRepository: GroupRepository,
-    private val expenseRepository: ExpenseRepository
+    private val expenseRepository: ExpenseRepository,
+    private val tokenProvider: TokenProvider
 ) : ViewModel() {
 
     // ── Groups (Room → Flow, auto-updates when SyncWorker writes) ────
@@ -61,6 +62,15 @@ class GroupsViewModel @Inject constructor(
     val settlement = _settlement.asStateFlow()
 
     private var pollJob: Job? = null
+    
+    private val _currentUserId = MutableStateFlow<String?>(null)
+    val currentUserId = _currentUserId.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            _currentUserId.value = tokenProvider.getUserId()
+        }
+    }
 
     // ── Actions ──────────────────────────────────────────────────────
 
@@ -71,6 +81,7 @@ class GroupsViewModel @Inject constructor(
     fun loadGroup(id: String) = viewModelScope.launch {
         _groupId.value = id
         runCatching { _groupDetail.value = api.getGroup(id) }.onFailure { it.printStackTrace() }
+        runCatching { expenseRepository.refreshFromRemote(id) }.onFailure { it.printStackTrace() }
     }
 
     fun loadBalances(id: String) = viewModelScope.launch {
@@ -108,6 +119,16 @@ class GroupsViewModel @Inject constructor(
         }.onFailure { it.printStackTrace() }
     }
 
+    fun editExpense(transactionId: String, req: CreateExpenseRequest) = viewModelScope.launch {
+        runCatching {
+            api.editExpense(transactionId, req)
+            _groupId.value?.let { groupId ->
+                expenseRepository.refreshFromRemote(groupId)
+                groupRepository.refreshBalances(groupId)
+            }
+        }.onFailure { it.printStackTrace() }
+    }
+
     fun reverseExpense(transactionId: String) = viewModelScope.launch {
         runCatching {
             api.reverseExpense(transactionId)
@@ -115,6 +136,13 @@ class GroupsViewModel @Inject constructor(
                 expenseRepository.refreshFromRemote(groupId)
                 groupRepository.refreshBalances(groupId)
             }
+        }.onFailure { it.printStackTrace() }
+    }
+
+    fun addMember(groupId: String, email: String) = viewModelScope.launch {
+        runCatching {
+            api.addMember(groupId, AddMemberRequest(email))
+            loadGroup(groupId) // refresh member list
         }.onFailure { it.printStackTrace() }
     }
 

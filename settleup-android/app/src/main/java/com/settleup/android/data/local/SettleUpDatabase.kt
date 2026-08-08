@@ -11,7 +11,7 @@ import com.settleup.android.data.local.entity.GroupEntity
 
 @Database(
     entities = [GroupEntity::class, ExpenseEntity::class, BalanceEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class SettleUpDatabase : RoomDatabase() {

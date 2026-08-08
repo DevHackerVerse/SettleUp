@@ -62,6 +62,9 @@ class ExpenseRepository @Inject constructor(
         runCatching {
             val page = api.getExpenses(groupId, 0, 50)
             val entities = page.content.map { dto ->
+                val ledgerJson = dto.ledgerEntries?.joinToString(",", "[", "]") {
+                    """{"id":${it.id},"userId":"${it.userId}","entryType":"${it.entryType}","amount":"${it.amount}"}"""
+                }
                 ExpenseEntity(
                     remoteId = dto.transactionId,
                     groupId = dto.groupId,
@@ -71,7 +74,9 @@ class ExpenseRepository @Inject constructor(
                     splitType = dto.splitType,
                     currency = dto.currency,
                     isReversal = dto.isReversal,
-                    syncStatus = SyncStatus.SYNCED
+                    syncStatus = SyncStatus.SYNCED,
+                    ledgerEntriesJson = ledgerJson,
+                    createdAt = dto.createdAt?.let { parseIso(it) } ?: System.currentTimeMillis()
                 )
             }
             expenseDao.clearSyncedForGroup(groupId)
@@ -119,5 +124,11 @@ class ExpenseRepository @Inject constructor(
             .build()
         WorkManager.getInstance(context)
             .enqueueUniqueWork("settleup_sync", ExistingWorkPolicy.KEEP, request)
+    }
+
+    private fun parseIso(dateStr: String): Long {
+        return runCatching {
+            java.time.Instant.parse(if (dateStr.endsWith("Z")) dateStr else "${dateStr}Z").toEpochMilli()
+        }.getOrDefault(System.currentTimeMillis())
     }
 }

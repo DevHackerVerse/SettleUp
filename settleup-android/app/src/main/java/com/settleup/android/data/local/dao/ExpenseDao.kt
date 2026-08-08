@@ -11,8 +11,8 @@ interface ExpenseDao {
     @Query("SELECT * FROM expenses WHERE groupId = :groupId ORDER BY createdAt DESC")
     fun observeByGroup(groupId: String): Flow<List<ExpenseEntity>>
 
-    /** All rows that haven't been pushed to the backend yet */
-    @Query("SELECT * FROM expenses WHERE syncStatus = '${SyncStatus.PENDING}' AND remoteId IS NULL")
+    /** All rows that haven't been successfully pushed to the backend yet */
+    @Query("SELECT * FROM expenses WHERE syncStatus IN ('${SyncStatus.PENDING}', '${SyncStatus.FAILED}') AND remoteId IS NULL")
     suspend fun getPending(): List<ExpenseEntity>
 
     /** Insert a new locally-created expense (PENDING by default) */

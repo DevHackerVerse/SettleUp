@@ -26,6 +26,8 @@ interface ApiService {
     // Expenses
     @POST("groups/{groupId}/expenses")
     suspend fun createExpense(@Path("groupId") groupId: String, @Body req: CreateExpenseRequest): ExpenseDto
+    @PUT("expenses/{transactionId}")
+    suspend fun editExpense(@Path("transactionId") transactionId: String, @Body req: CreateExpenseRequest): ExpenseDto
     @GET("groups/{groupId}/expenses")
     suspend fun getExpenses(@Path("groupId") groupId: String, @Query("page") page: Int = 0, @Query("size") size: Int = 20): PageResponse<ExpenseDto>
     @DELETE("expenses/{transactionId}")

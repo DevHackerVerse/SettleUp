@@ -20,7 +20,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): SettleUpDatabase =
         Room.databaseBuilder(context, SettleUpDatabase::class.java, "settleup.db")
-            .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
+            .fallbackToDestructiveMigration()
             .build()
 
     @Provides fun provideGroupDao(db: SettleUpDatabase): GroupDao = db.groupDao()

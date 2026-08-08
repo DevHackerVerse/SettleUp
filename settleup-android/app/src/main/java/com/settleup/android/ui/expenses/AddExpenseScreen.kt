@@ -42,12 +42,15 @@ fun AddExpenseScreen(
         splitValues = members.associate { it.userId to "" }
     }
 
-    val splitTypes = listOf("EQUAL", "PERCENTAGE", "CUSTOM")
+    var lentTo by remember { mutableStateOf("") }
+    
+    val splitTypes = listOf("EQUAL", "PERCENTAGE", "CUSTOM", "LENT")
     val total = totalAmount.toDoubleOrNull() ?: 0.0
     val splitSum = splitValues.values.sumOf { it.toDoubleOrNull() ?: 0.0 }
     val isValid = description.isNotBlank() && total > 0 && paidBy.isNotBlank() && when (splitType) {
         "PERCENTAGE" -> Math.abs(splitSum - 100.0) < 0.01
         "CUSTOM"     -> Math.abs(splitSum - total) < 0.01
+        "LENT"       -> lentTo.isNotBlank()
         else         -> true
     }
 
@@ -108,7 +111,7 @@ fun AddExpenseScreen(
                     }
                 }
             }
-            if (splitType != "EQUAL" && members.isNotEmpty()) {
+            if (splitType != "EQUAL" && splitType != "LENT" && members.isNotEmpty()) {
                 item {
                     val label = if (splitType == "PERCENTAGE")
                         "Sum: ${splitSum.toInt()}% / 100%" else "Sum: $splitSum / $total"
@@ -130,6 +133,29 @@ fun AddExpenseScreen(
                     }
                 }
             }
+            if (splitType == "LENT" && members.isNotEmpty()) {
+                item {
+                    var lentExpanded by remember { mutableStateOf(false) }
+                    ExposedDropdownMenuBox(expanded = lentExpanded, onExpandedChange = { lentExpanded = it }) {
+                        OutlinedTextField(
+                            value = members.find { it.userId == lentTo }?.name ?: "Select friend...",
+                            onValueChange = {}, readOnly = true,
+                            label = { Text("Lend To (owes 100% of ${group?.currency ?: "INR"} ${totalAmount.ifBlank { "0.00" }})") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(lentExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                        )
+                        ExposedDropdownMenu(expanded = lentExpanded, onDismissRequest = { lentExpanded = false }) {
+                            members.forEach { m ->
+                                DropdownMenuItem(text = { Text("${m.name} ${if (m.userId == paidBy) "(You / Payer)" else ""}") },
+                                    onClick = { lentTo = m.userId; lentExpanded = false })
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text("💡 This records a direct 1-to-1 loan.", 
+                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             item {
                 Spacer(Modifier.height(8.dp))
                 if (submitted) {
@@ -143,11 +169,18 @@ fun AddExpenseScreen(
                     Button(
                         onClick = {
                             submitted = true
-                            val splits = if (splitType == "EQUAL") null
-                            else members.map { SplitEntry(it.userId, splitValues[it.userId] ?: "0") }
+                            val actualSplitType = if (splitType == "LENT") "CUSTOM" else splitType
+                            val splits = if (actualSplitType == "EQUAL") null else members.map { m ->
+                                val v = if (splitType == "LENT") {
+                                    if (m.userId == lentTo) totalAmount else "0"
+                                } else {
+                                    splitValues[m.userId] ?: "0"
+                                }
+                                SplitEntry(m.userId, v)
+                            }
                             // Uses repository: saves locally as PENDING, enqueues SyncWorker
                             viewModel.addExpense(groupId, CreateExpenseRequest(
-                                description, totalAmount, paidBy, splitType, splits))
+                                description, totalAmount, paidBy, actualSplitType, splits))
                             onBack()
                         },
                         enabled = isValid,

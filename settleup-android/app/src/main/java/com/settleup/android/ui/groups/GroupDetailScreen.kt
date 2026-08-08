@@ -39,6 +39,8 @@ fun GroupDetailScreen(
     val debts by viewModel.debts.collectAsState()
     val settlement by viewModel.settlement.collectAsState()
     var selectedTab by remember { mutableStateOf(0) }
+    var showAddMember by remember { mutableStateOf(false) }
+    var showEditExpense by remember { mutableStateOf<ExpenseEntity?>(null) }
 
     // Count pending expenses for tab badge
     val pendingCount = expenses.count { it.syncStatus == SyncStatus.PENDING }
@@ -86,6 +88,11 @@ fun GroupDetailScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    TextButton(onClick = { showAddMember = true }) {
+                        Text("Add Member")
+                    }
                 }
             )
         },
@@ -98,8 +105,12 @@ fun GroupDetailScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            PrimaryTabRow(selectedTabIndex = selectedTab) {
-                listOf("Expenses", "Balances", "Debts", "Settle Up").forEachIndexed { idx, title ->
+            ScrollableTabRow(
+                selectedTabIndex = selectedTab,
+                edgePadding = 8.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                listOf("Expenses", "Balances", "Debts", "Settle Up", "Activity Log", "Total").forEachIndexed { idx, title ->
                     Tab(
                         selected = selectedTab == idx,
                         onClick = { selectedTab = idx },
@@ -108,7 +119,7 @@ fun GroupDetailScreen(
                 }
             }
             when (selectedTab) {
-                0 -> ExpensesTab(expenses, viewModel, groupId)
+                0 -> ExpensesTab(expenses, viewModel, groupId, onEdit = { showEditExpense = it })
                 1 -> BalancesTab(balances, group?.currency ?: "INR")
                 2 -> DebtsTab(debts?.settlementsSuggested ?: emptyList())
                 3 -> SettleUpTab(
@@ -121,20 +132,86 @@ fun GroupDetailScreen(
                     },
                     onReset = { viewModel.resetSettlement() }
                 )
+                4 -> ActivityLogTab(expenses, group?.currency ?: "INR")
+                5 -> TotalTab(
+                    expenses = expenses, 
+                    currency = group?.currency ?: "INR", 
+                    currentUserId = viewModel.currentUserId.collectAsState().value
+                )
             }
         }
+    }
+
+    if (showAddMember) {
+        var email by remember { mutableStateOf("") }
+        ModalBottomSheet(onDismissRequest = { showAddMember = false }) {
+            Column(modifier = Modifier.fillMaxWidth().padding(24.dp).navigationBarsPadding()) {
+                Text("Add Member", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = email, onValueChange = { email = it },
+                    label = { Text("Friend's Email") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(24.dp))
+                Button(
+                    onClick = { viewModel.addMember(groupId, email); showAddMember = false },
+                    enabled = email.isNotBlank(), modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) { Text("Send Invite") }
+            }
+        }
+    }
+
+    showEditExpense?.let { exp ->
+        EditExpenseSheet(
+            expense = exp,
+            group = group,
+            onDismiss = { showEditExpense = null },
+            onSave = { req -> 
+                exp.remoteId?.let { viewModel.editExpense(it, req) }
+                showEditExpense = null 
+            }
+        )
     }
 }
 
 // ── Tab 1: Expenses (with ⏳ sync badge) ─────────────────────────────
 
 @Composable
-private fun ExpensesTab(
+fun ExpensesTab(
     expenses: List<ExpenseEntity>,
     viewModel: GroupsViewModel,
-    groupId: String
+    groupId: String,
+    onEdit: (ExpenseEntity) -> Unit
 ) {
-    if (expenses.isEmpty()) {
+    val reversedIndices = mutableSetOf<Int>()
+    val items = expenses.toList()
+    for (i in items.indices) {
+        val r = items[i]
+        if (r.isReversal || r.description.startsWith("REVERSAL:")) {
+            val origDesc = r.description.replace(Regex("^REVERSAL:\\s*(REVERSAL:\\s*)*"), "")
+            for (j in i + 1 until items.size) {
+                val candidate = items[j]
+                if (!reversedIndices.contains(j) &&
+                    !candidate.isReversal &&
+                    !candidate.description.startsWith("REVERSAL:") &&
+                    (candidate.description == origDesc || candidate.description.contains(origDesc)) &&
+                    candidate.totalAmount == r.totalAmount
+                ) {
+                    reversedIndices.add(j)
+                    break
+                }
+            }
+        }
+    }
+
+    val activeExpenses = items.filterIndexed { idx, exp ->
+        if (exp.isReversal || exp.description.startsWith("REVERSAL:")) false
+        else if (reversedIndices.contains(idx)) false
+        else if (exp.description.startsWith("SETTLEMENT:")) false
+        else true
+    }
+    
+    if (activeExpenses.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("💸", style = MaterialTheme.typography.displayMedium)
@@ -146,22 +223,16 @@ private fun ExpensesTab(
         }
     } else {
         LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
-            items(expenses, key = { it.localId }) { expense ->
+            items(activeExpenses, key = { it.localId }) { expense ->
                 ListItem(
                     headlineContent = {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(expense.description, fontWeight = FontWeight.SemiBold)
-                            // ⏳ Pending Sync badge — the Phase 4 core UI feature
                             when (expense.syncStatus) {
-                                SyncStatus.PENDING -> SuggestionChip(
-                                    onClick = {},
-                                    label = { Text("⏳ Pending", style = MaterialTheme.typography.labelSmall) }
-                                )
+                                SyncStatus.PENDING -> SuggestionChip(onClick = {}, label = { Text("⏳ Pending", style = MaterialTheme.typography.labelSmall) })
                                 SyncStatus.FAILED -> SuggestionChip(
                                     onClick = {},
-                                    colors = SuggestionChipDefaults.suggestionChipColors(
-                                        containerColor = MaterialTheme.colorScheme.errorContainer
-                                    ),
+                                    colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                                     label = { Text("❌ Sync failed", style = MaterialTheme.typography.labelSmall) }
                                 )
                                 else -> Unit
@@ -176,17 +247,21 @@ private fun ExpensesTab(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                            // Only allow reverse on synced expenses (have a remoteId)
                             if (expense.remoteId != null) {
-                                TextButton(
-                                    onClick = {
-                                        viewModel.reverseExpense(expense.remoteId)
-                                        viewModel.loadBalances(groupId)
-                                    },
-                                    contentPadding = PaddingValues(0.dp)
-                                ) {
-                                    Text("Reverse", style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error)
+                                Row {
+                                    TextButton(onClick = { onEdit(expense) }, contentPadding = PaddingValues(0.dp)) {
+                                        Text("Edit", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    TextButton(
+                                        onClick = {
+                                            viewModel.reverseExpense(expense.remoteId)
+                                            viewModel.loadBalances(groupId)
+                                        },
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("Reverse", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
                         }

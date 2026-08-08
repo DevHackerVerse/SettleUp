@@ -18,7 +18,8 @@ data class ExpenseEntity(
     val currency: String = "INR",
     val isReversal: Boolean = false,
     val syncStatus: String = SyncStatus.PENDING,  // "PENDING" | "SYNCED" | "FAILED"
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val ledgerEntriesJson: String? = null
 )
 
 object SyncStatus {
